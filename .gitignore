@@ -8,3 +8,8 @@ results/
 svm-classification.ipynb
 __pycache__/
 datasets.pyc
+dcec.code-workspace
+.mypy_cache
+build
+.ipynb_checkpoints
+dcec.egg-info
