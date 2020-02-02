@@ -90,6 +90,7 @@ class DCEC:
         input_shape,
         filters,
         n_clusters,
+        lambda_kl=0.05,
         alpha=1.0,
         batch_size=1000,
         epochs=100,
@@ -98,8 +99,9 @@ class DCEC:
         cae_weights=None,
         save_dir="dcec",
     ):
-        self.n_clusters = n_clusters
         self.input_shape = input_shape
+        self.n_clusters = n_clusters
+        self.lambda_kl = lambda_kl
         self.alpha = alpha
         self.pretrained = False
         self.batch_size = batch_size
@@ -108,6 +110,8 @@ class DCEC:
         self.update_interval = update_interval
         self.cae_weights = cae_weights
         self.save_dir = save_dir
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
 
         self.cae = CAE(input_shape, filters)
         hidden = self.cae.get_layer(name="embedding").output
@@ -149,9 +153,12 @@ class DCEC:
         return self.encoder.predict(self.X)
 
     def predict(self, x):
+        return self.get_q(x).argmax(1)
+
+    def get_q(self, x):
         self.X = x.reshape(-1, *self.input_shape)
         q, _ = self.model.predict(self.X, verbose=0)
-        return q.argmax(1)
+        return q
 
     def score_samples(self, x):
         self.X = x.reshape(-1, *self.input_shape)
@@ -196,12 +203,10 @@ class DCEC:
 
         # Step 3: deep clustering
         # logging file
-        self.compile()
-        if not os.path.exists(self.save_dir):
-            os.makedirs(self.save_dir)
+        self.compile(loss_weights=[self.lambda_kl, 1])
 
         t2 = time()
-        loss = [0, 0, 0]
+        self.loss_evolution = []
         index = 0
         for ite in range(int(self.maxiter)):
             if ite % self.update_interval == 0:
@@ -213,18 +218,25 @@ class DCEC:
 
             # train on batch
             if (index + 1) * self.batch_size > x.shape[0]:
-                loss = self.model.train_on_batch(
-                    x=x[index * self.batch_size : :],
-                    y=[p[index * self.batch_size : :], x[index * self.batch_size : :]],
+                self.loss_evolution.append(
+                    self.model.train_on_batch(
+                        x=x[index * self.batch_size : :],
+                        y=[
+                            p[index * self.batch_size : :],
+                            x[index * self.batch_size : :],
+                        ],
+                    )
                 )
                 index = 0
             else:
-                loss = self.model.train_on_batch(
-                    x=x[index * self.batch_size : (index + 1) * self.batch_size],
-                    y=[
-                        p[index * self.batch_size : (index + 1) * self.batch_size],
-                        x[index * self.batch_size : (index + 1) * self.batch_size],
-                    ],
+                self.loss_evolution.append(
+                    self.model.train_on_batch(
+                        x=x[index * self.batch_size : (index + 1) * self.batch_size],
+                        y=[
+                            p[index * self.batch_size : (index + 1) * self.batch_size],
+                            x[index * self.batch_size : (index + 1) * self.batch_size],
+                        ],
+                    )
                 )
                 index += 1
 
