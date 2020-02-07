@@ -163,10 +163,12 @@ class DCEC:
     def score_samples(self, x):
         self.X = x.reshape(-1, *self.input_shape)
         y = self.cae.predict(self.X)
-        return keras.losses.mean_squared_error(
+        re = keras.losses.mean_squared_error(
             x.reshape(-1, np.prod(self.input_shape)),
             y.reshape(-1, np.prod(self.input_shape)),
         ).numpy()
+        scores = np.amax(self.get_q(x), 1)
+        return re, scores
 
     @staticmethod
     def target_distribution(q):
