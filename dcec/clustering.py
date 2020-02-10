@@ -10,7 +10,7 @@ from keras.losses import mean_squared_error
 from keras.models import Model
 from sklearn.cluster import KMeans
 
-from .model import CAE
+from .model import CAE,CAE1d
 
 
 class ClusteringLayer(Layer):
@@ -98,6 +98,7 @@ class DCEC:
         update_interval=140,
         cae_weights=None,
         save_dir="dcec",
+        is1d = False,
     ):
         self.input_shape = input_shape
         self.n_clusters = n_clusters
@@ -112,8 +113,8 @@ class DCEC:
         self.save_dir = save_dir
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
-
-        self.cae = CAE(input_shape, filters)
+        print("CAE1d(input_shape",input_shape)
+        self.cae = CAE1d(input_shape, filters) if is1d else CAE(input_shape, filters)
         hidden = self.cae.get_layer(name="embedding").output
         self.encoder = Model(inputs=self.cae.input, outputs=hidden)
 
@@ -162,7 +163,9 @@ class DCEC:
 
     def score_samples(self, x):
         self.X = x.reshape(-1, *self.input_shape)
+        print("self.X.shape",self.X.shape)
         y = self.cae.predict(self.X)
+        print("y.shape",y.shape)
         re = keras.losses.mean_squared_error(
             x.reshape(-1, np.prod(self.input_shape)),
             y.reshape(-1, np.prod(self.input_shape)),
@@ -181,6 +184,7 @@ class DCEC:
     def fit(self, x):
         x = x.reshape(-1, *self.input_shape)
         self.X = x
+        print("self.X.shape",self.X.shape)
         print("Update interval", self.update_interval)
         save_interval = x.shape[0] / self.batch_size * 5
         print("Save interval", save_interval)

@@ -15,6 +15,9 @@ def input_shape(nb_samples, nb_features):
     return (width, height, nb_features)
 
 
+def input_shape1d(nb_samples, nb_features):
+    return (1, nb_samples, nb_features)
+
 def pretrained_clust(
     traffic_file, list_features, filters, n_clusters, pretrained_path, to_pickle,
 ):
