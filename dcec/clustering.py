@@ -8,7 +8,10 @@ import numpy as np
 from keras.engine.topology import InputSpec, Layer
 from keras.losses import mean_squared_error
 from keras.models import Model
+from keras.utils import Sequence
 from sklearn.cluster import KMeans
+
+from keras import optimizers
 
 from .model import CAE,CAE1d
 
@@ -90,6 +93,7 @@ class DCEC:
         input_shape,
         filters,
         n_clusters,
+        cae,
         lambda_kl=0.05,
         alpha=1.0,
         batch_size=1000,
@@ -98,7 +102,6 @@ class DCEC:
         update_interval=140,
         cae_weights=None,
         save_dir="dcec",
-        is1d = False,
     ):
         self.input_shape = input_shape
         self.n_clusters = n_clusters
@@ -113,8 +116,8 @@ class DCEC:
         self.save_dir = save_dir
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
-        print("CAE1d(input_shape",input_shape)
-        self.cae = CAE1d(input_shape, filters) if is1d else CAE(input_shape, filters)
+#        print("CAE1d(input_shape",input_shape)
+        self.cae = cae(input_shape, filters)# if is1d else CAE(input_shape, filters)
         hidden = self.cae.get_layer(name="embedding").output
         self.encoder = Model(inputs=self.cae.input, outputs=hidden)
 
@@ -138,7 +141,7 @@ class DCEC:
             x,
             verbose=0,
             batch_size=batch_size,
-            epochs=epochs,
+            epochs = epochs,
             callbacks=[csv_logger],
         )
         print("Pretraining time: ", time() - t0)
@@ -179,6 +182,7 @@ class DCEC:
         return (weight.T / weight.sum(1)).T
 
     def compile(self, loss=["kld", "mse"], loss_weights=[1, 1], optimizer="adam"):
+#        optimizer = optimizers.Adam(learning_rate=0.1)
         self.model.compile(loss=loss, loss_weights=loss_weights, optimizer=optimizer)
 
     def fit(self, x):
@@ -193,7 +197,7 @@ class DCEC:
         t0 = time()
         if not self.pretrained and self.cae_weights is None:
             print("...pretraining CAE using default hyper-parameters:")
-            print("   optimizer='adam';   epochs=200")
+            print("   optimizer='adam';   epochs={}".format(self.epochs))
             self.pretrain(x, self.batch_size, self.epochs, save_dir=self.save_dir)
             self.pretrained = True
         elif self.cae_weights is not None:
@@ -212,8 +216,10 @@ class DCEC:
         self.compile(loss_weights=[self.lambda_kl, 1])
 
         t2 = time()
+        train_loss_evolution = []
         self.loss_evolution = []
         index = 0
+        current_learning_rate = 0.001
         for ite in range(int(self.maxiter)):
             if ite % self.update_interval == 0:
                 q, _ = self.model.predict(x, verbose=0)
@@ -221,10 +227,16 @@ class DCEC:
                     q
                 )  # update the auxiliary target distribution p
                 self.y_pred = q.argmax(1)
+            self.loss_evolution.append(self.model.test_on_batch(
+                x=x,
+                y=[p,x,],
+            ))
+#            print("test",current_learning_rate,self.loss_evolution[-1])
 
             # train on batch
+#            self.model.fit(x,[p,x],batch_size = self.batch_size)
             if (index + 1) * self.batch_size > x.shape[0]:
-                self.loss_evolution.append(
+                train_loss_evolution.append(
                     self.model.train_on_batch(
                         x=x[index * self.batch_size : :],
                         y=[
@@ -235,7 +247,7 @@ class DCEC:
                 )
                 index = 0
             else:
-                self.loss_evolution.append(
+                train_loss_evolution.append(
                     self.model.train_on_batch(
                         x=x[index * self.batch_size : (index + 1) * self.batch_size],
                         y=[
@@ -245,8 +257,10 @@ class DCEC:
                     )
                 )
                 index += 1
-
-            # save intermediate model
+            current_learning_rate *= 1#0.97
+            K.set_value(self.model.optimizer.lr, current_learning_rate)
+#            print(current_learning_rate,self.loss_evolution[-1])
+#            save intermediate model
             if ite % save_interval == 0:
                 # save DCEC model checkpoints
                 print(
@@ -258,7 +272,7 @@ class DCEC:
                 )
 
             ite += 1
-
+            
         # save the trained model
         print("saving model to:", self.save_dir + "/dcec_model_final.h5")
         self.model.save_weights(self.save_dir + "/dcec_model_final.h5")
