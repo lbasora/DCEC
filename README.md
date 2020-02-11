@@ -8,8 +8,8 @@ Implemented with keras and tensorflow 2.
 
 Make sure to properly install:
 - traffic
-- keras + tensorflow-gpu (or tensorflow) 2.0 or greater (+ cudatoolkit 10.0 & cudnn 7.6): 
+- keras + tensorflow (or tensorflow-gpu) 2.0 or greater: 
 
-  To install tensorflow-gpu and related cuda libraries, it is better to use conda: `conda install tensorflow-gpu`
+  To install tensorflow-gpu 2.0 and related cuda libraries (cudatoolkit 10.0 & cudnn 7.6), it is easier to use conda: `conda install tensorflow-gpu`
 
-- [artefact] (https://github.com/xoolive/artefact) (only for notebook plots)
+- [artefact](https://github.com/xoolive/artefact) (only for notebook plots)
