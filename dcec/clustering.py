@@ -219,6 +219,7 @@ class DCEC:
         train_loss_evolution = []
         self.loss_evolution = []
         index = 0
+        indexes = np.random.permutation(x.shape[0])
         current_learning_rate = 0.001
         for ite in range(int(self.maxiter)):
             if ite % self.update_interval == 0:
@@ -238,21 +239,22 @@ class DCEC:
             if (index + 1) * self.batch_size > x.shape[0]:
                 train_loss_evolution.append(
                     self.model.train_on_batch(
-                        x=x[index * self.batch_size : :],
+                        x=x[indexes[index * self.batch_size:]],
                         y=[
-                            p[index * self.batch_size : :],
-                            x[index * self.batch_size : :],
+                            p[indexes[index * self.batch_size:]],
+                            x[indexes[index * self.batch_size:]],
                         ],
                     )
                 )
                 index = 0
+                indexes = np.random.permutation(x.shape[0])
             else:
                 train_loss_evolution.append(
                     self.model.train_on_batch(
-                        x=x[index * self.batch_size : (index + 1) * self.batch_size],
+                        x=x[indexes[index * self.batch_size : (index + 1) * self.batch_size]],
                         y=[
-                            p[index * self.batch_size : (index + 1) * self.batch_size],
-                            x[index * self.batch_size : (index + 1) * self.batch_size],
+                            p[indexes[index * self.batch_size : (index + 1) * self.batch_size]],
+                            x[indexes[index * self.batch_size : (index + 1) * self.batch_size]],
                         ],
                     )
                 )
