@@ -18,6 +18,9 @@ def input_shape(nb_samples, nb_features):
 def input_shape1d(nb_samples, nb_features):
     return (1, nb_samples, nb_features)
 
+def input_shape_local1d(nb_samples, nb_features):
+    return (nb_samples, nb_features)
+
 def input_shape_dense(nb_samples, nb_features):
     return (nb_samples* nb_features,)
 

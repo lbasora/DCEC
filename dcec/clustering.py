@@ -15,6 +15,8 @@ from keras import optimizers
 
 from .model import CAE,CAE1d
 
+from artefact import csvlogger
+
 
 class ClusteringLayer(Layer):
     """
@@ -86,12 +88,16 @@ class ClusteringLayer(Layer):
         base_config = super(ClusteringLayer, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+def tostr(x):
+    if isinstance(x,list) or isinstance(x,tuple):
+        return "_".join(tostr(xi) for xi in x)
+    else:
+        return str(x)
 
 class DCEC:
     def __init__(
         self,
         input_shape,
-        filters,
         n_clusters,
         cae,
         lambda_kl=0.05,
@@ -102,7 +108,10 @@ class DCEC:
         update_interval=140,
         cae_weights=None,
         save_dir="dcec",
+        csvlog = None,
     ):
+        self.Xtest = None
+        self.csvlog = csvlog 
         self.input_shape = input_shape
         self.n_clusters = n_clusters
         self.lambda_kl = lambda_kl
@@ -114,10 +123,10 @@ class DCEC:
         self.update_interval = update_interval
         self.cae_weights = cae_weights
         self.save_dir = save_dir
-        if not os.path.exists(self.save_dir):
+        if self.save_dir is not None and not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
 #        print("CAE1d(input_shape",input_shape)
-        self.cae = cae(input_shape, filters)# if is1d else CAE(input_shape, filters)
+        self.cae = cae(input_shape)#, filters)# if is1d else CAE(input_shape, filters)
         hidden = self.cae.get_layer(name="embedding").output
         self.encoder = Model(inputs=self.cae.input, outputs=hidden)
 
@@ -131,8 +140,9 @@ class DCEC:
         print("...Pretraining...")
         self.cae.compile(optimizer=optimizer, loss="mse")
         from keras.callbacks import CSVLogger
-
-        csv_logger = CSVLogger(save_dir + "/pretrain_log.csv")
+        callbacks = []
+        if save_dir is not None:
+            callbacks.append(CSVLogger(save_dir + "/pretrain_log.csv"))
 
         # begin training
         t0 = time()
@@ -142,11 +152,12 @@ class DCEC:
             verbose=0,
             batch_size=batch_size,
             epochs = epochs,
-            callbacks=[csv_logger],
+            callbacks=callbacks,
         )
         print("Pretraining time: ", time() - t0)
-        self.cae.save(save_dir + "/pretrain_cae_model.h5")
-        print("Pretrained weights are saved to %s/pretrain_cae_model.h5" % save_dir)
+        if save_dir is not None:
+            self.cae.save(save_dir + "/pretrain_cae_model.h5")
+            print("Pretrained weights are saved to %s/pretrain_cae_model.h5" % save_dir)
         self.pretrained = True
 
     def load_weights(self, weights_path):
@@ -186,6 +197,14 @@ class DCEC:
         self.model.compile(loss=loss, loss_weights=loss_weights, optimizer=optimizer)
 
     def fit(self, x):
+        csvlog = csvlogger.CsvLog(None if self.csvlog is None else self.csvlog[0])
+        cstnamelog = [] if self.csvlog is None else list(sorted(self.csvlog[1]))
+        namelosses = ["loss","kl_loss","re_loss"]
+        testnamelosses = [] if self.testfeatures is None else ["test" + x for x in namelosses]
+        if self.testfeatures is not None:
+            self.Xtest = self.transform.transform(self.testfeatures).reshape(-1,*self.input_shape)
+        csvlog.add2line(cstnamelog + ["ite","current_learning_rate"] + namelosses + testnamelosses)
+        csvlog.writeline()
         x = x.reshape(-1, *self.input_shape)
         self.X = x
         print("self.X.shape",self.X.shape)
@@ -221,6 +240,12 @@ class DCEC:
         index = 0
         indexes = np.random.permutation(x.shape[0])
         current_learning_rate = 0.001
+        def evaluate(x):
+            q, _ = self.model.predict(x, verbose=0)
+            p = self.target_distribution(
+                q
+            )  # update the auxiliary target distribution p
+            return self.model.test_on_batch(x=x,y=[p,x,],)
         for ite in range(int(self.maxiter)):
             if ite % self.update_interval == 0:
                 q, _ = self.model.predict(x, verbose=0)
@@ -228,10 +253,6 @@ class DCEC:
                     q
                 )  # update the auxiliary target distribution p
                 self.y_pred = q.argmax(1)
-            self.loss_evolution.append(self.model.test_on_batch(
-                x=x,
-                y=[p,x,],
-            ))
 #            print("test",current_learning_rate,self.loss_evolution[-1])
 
             # train on batch
@@ -259,11 +280,11 @@ class DCEC:
                     )
                 )
                 index += 1
-            current_learning_rate *= 1#0.97
+            current_learning_rate *= 0.999#0.97
             K.set_value(self.model.optimizer.lr, current_learning_rate)
 #            print(current_learning_rate,self.loss_evolution[-1])
 #            save intermediate model
-            if ite % save_interval == 0:
+            if ite % save_interval == 0 and self.save_dir is not None:
                 # save DCEC model checkpoints
                 print(
                     "saving model to:",
@@ -272,15 +293,24 @@ class DCEC:
                 self.model.save_weights(
                     self.save_dir + "/dcec_model_" + str(ite) + ".h5"
                 )
-
-            ite += 1
-            
+            self.loss_evolution.append(self.model.test_on_batch(x=x,y=[p,x,],))
+            csvlog.add2line([tostr(self.csvlog[1][att]) for att in cstnamelog])
+            csvlog.add2line([ite,current_learning_rate]+self.loss_evolution[-1])
+#            print(self.X-self.Xtest)
+            if self.testfeatures is not None:
+#                print(evaluate(self.Xtest))
+#                print(evaluate(x))
+#                print(self.model.test_on_batch(x=x,y=[p,x,],))
+                testlosses = evaluate(self.Xtest)
+                csvlog.add2line(testlosses)
+            csvlog.writeline()
         # save the trained model
-        print("saving model to:", self.save_dir + "/dcec_model_final.h5")
-        self.model.save_weights(self.save_dir + "/dcec_model_final.h5")
+        if self.save_dir is not None:
+            print("saving model to:", self.save_dir + "/dcec_model_final.h5")
+            self.model.save_weights(self.save_dir + "/dcec_model_final.h5")
         t3 = time()
         print("Pretrain time:  ", t1 - t0)
         print("Clustering time:", t3 - t1)
         print("Total time:     ", t3 - t0)
-
+        csvlog.close()
         _labels = self.y_pred

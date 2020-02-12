@@ -1,7 +1,7 @@
 from functools import reduce
 
 import numpy as np
-from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Reshape, BatchNormalization
+from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Reshape, BatchNormalization, LocallyConnected1D
 from keras.models import Model, Sequential
 
 
@@ -61,8 +61,8 @@ def CAE(input_shape, filters):
 
 
 
-def buildcnn(model,filters,ns,strides,padding,input_shape=None,is1d=False,transpose=False):
-    cv = Conv2DTranspose if transpose else Conv2D
+def buildcnn(model,filters,ns,strides,padding,input_shape=None,is1d=False,transpose=False,builder = Conv2D):
+    cv = Conv2DTranspose if transpose else builder
     for i,(fi,ni,stride) in enumerate(zip(filters,ns,strides)):
         args ={}
         args["filters"] = fi
@@ -76,18 +76,18 @@ def buildcnn(model,filters,ns,strides,padding,input_shape=None,is1d=False,transp
             args["output_padding"]=(0,0)
         model.add(cv(**args))
 
-def CAE1d(input_shape, filters):
+def CAE1d(input_shape, filters, kernels):
     model = Sequential()
 
 #    n1 = 32
 #    n2 = 16
 #    stride = 1
     padding = "valid"
-    filters = [8, 16,32]
+#    filters = [8, 16,32]
 #    ns = list(reversed(filters))
-    ns = [32,16,8]
-    strides = [1]*len(ns)
-    buildcnn(model,filters,ns,strides,padding,input_shape,is1d=True)
+#    ns = [32,16,8]
+    strides = [1]*len(kernels)
+    buildcnn(model,filters,kernels,strides,padding,input_shape,is1d=True)
     # model.add(
     #     Conv2D(
     #         filters[0],
@@ -118,9 +118,9 @@ def CAE1d(input_shape, filters):
     #         filters[1], 3, strides=2, padding="same", activation="relu", name="deconv3"
     #     )
     # )
-    buildcnn(model,reversed(filters[:-1]),reversed(ns[1:]),reversed(strides[1:]),padding,input_shape=None,is1d=True,transpose=True)
+    buildcnn(model,reversed(filters[:-1]),reversed(kernels[1:]),reversed(strides[1:]),padding,input_shape=None,is1d=True,transpose=True)
     model.add(
-        Conv2DTranspose(input_shape[-1], (1,ns[0]), strides=(1,strides[0]), output_padding=(0,0), padding=padding)
+        Conv2DTranspose(input_shape[-1], (1,kernels[0]), strides=(1,strides[0]), output_padding=(0,0), padding=padding)
     )
     # model.add(
     #     Conv2DTranspose(
@@ -138,23 +138,59 @@ def CAE1d(input_shape, filters):
 
 
 
-def dense(input_shape,filters):
+def local1d(input_shape, filters, kernels):
     model = Sequential()
-    n = 3
+
+    padding = "valid"
+    strides = [1]*len(kernels)
+    for i,(fi,ni,stride) in enumerate(zip(filters,kernels,strides)):
+        args ={}
+        args["filters"] = fi
+        args["kernel_size"] = ni
+        args["strides"]=stride
+        args["padding"]=padding
+        args["activation"]="relu"
+        if i==0 and input_shape is not None:
+            args["input_shape"]=input_shape
+        model.add(LocallyConnected1D(**args))
+
+    c2s = model.layers[-1].output_shape[1:]
+    model.add(Flatten())
+    model.add(Dense(units=2, name="embedding"))
+
+    # decoder
+
+    print("c2s",c2s)#,model.layers[-1].output_shape[1:])
+    model.add(Dense(units=reduce((lambda x, y: x * y), c2s), activation="relu",))
+
+    model.add(Reshape((1,)+(c2s)))
+    buildcnn(model,reversed(filters[:-1]),reversed(kernels[1:]),reversed(strides[1:]),padding,input_shape=None,is1d=True,transpose=True)
+    model.add(
+        Conv2DTranspose(input_shape[-1], (1,kernels[0]), strides=(1,strides[0]), output_padding=(0,0), padding=padding)
+    )
+    model.add(Reshape(input_shape))
+    model.summary()
+    return model
+
+
+
+def dense(input_shape,archidense):
+    model = Sequential()
+    n = len(archidense)
     batchnorm = False
     model.add(
         Dense(
-            input_shape[0]//2,
+            archidense[0],
             activation="relu",
             input_shape=input_shape,
         )
     )
     if batchnorm:
         model.add(BatchNormalization())
-    for i in range(2,n+1):
+    for i in range(1,n):
         model.add(
             Dense(
-                input_shape[0]//2**i,
+                archidense[i],
                 activation="relu",
             )
         )
@@ -167,10 +203,10 @@ def dense(input_shape,filters):
             name="embedding",
         )
     )
-    for i in range(n,0,-1):
+    for i in range(n-1,-1,-1):
         model.add(
             Dense(
-                input_shape[0]//2**i,
+                archidense[i],
                 activation="relu",
             )
         )
