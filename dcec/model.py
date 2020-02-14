@@ -1,11 +1,11 @@
 from functools import reduce
 
 import numpy as np
-from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Reshape, BatchNormalization, LocallyConnected1D
+from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Reshape, BatchNormalization, LocallyConnected1D, Input, LocallyConnected2D
 from keras.models import Model, Sequential
 
 
-def CAE(input_shape, filters):
+def CAE(input_shape, filters,kernels,latentdim=2):
     model = Sequential()
 
     model.add(
@@ -33,7 +33,7 @@ def CAE(input_shape, filters):
     )
 
     model.add(Flatten())
-    model.add(Dense(units=filters[2], name="embedding"))
+    model.add(Dense(units=latentdim, name="embedding"))
 
     # decoder
     c2s = model.get_layer("conv3").output_shape[1:]
@@ -140,21 +140,21 @@ def CAE1d(input_shape, filters, kernels):
 
 def local1d(input_shape, filters, kernels):
     model = Sequential()
-
+    strides = [1] * len(kernels)
+    is1d = True
     padding = "valid"
-    strides = [1]*len(kernels)
     for i,(fi,ni,stride) in enumerate(zip(filters,kernels,strides)):
         args ={}
         args["filters"] = fi
-        args["kernel_size"] = ni
-        args["strides"]=stride
+        args["kernel_size"] = (1,ni) if is1d else ni
+        args["strides"]=(1,stride)  if is1d else stride
         args["padding"]=padding
         args["activation"]="relu"
         if i==0 and input_shape is not None:
             args["input_shape"]=input_shape
-        model.add(LocallyConnected1D(**args))
+        model.add(LocallyConnected2D(**args))
 
-    c2s = model.layers[-1].output_shape[1:]
+        c2s = model.layers[-1].output_shape[1:]#model.get_layer("conv3").output_shape[1:]
     model.add(Flatten())
     model.add(Dense(units=2, name="embedding"))
 
@@ -163,12 +163,16 @@ def local1d(input_shape, filters, kernels):
     print("c2s",c2s)#,model.layers[-1].output_shape[1:])
     model.add(Dense(units=reduce((lambda x, y: x * y), c2s), activation="relu",))
 
-    model.add(Reshape((1,)+(c2s)))
+    model.add(Reshape(((c2s))))
+    # model.add(
+    #     Conv2DTranspose(
+    #         filters[1], 3, strides=2, padding="same", activation="relu", name="deconv3"
+    #     )
+    # )
     buildcnn(model,reversed(filters[:-1]),reversed(kernels[1:]),reversed(strides[1:]),padding,input_shape=None,is1d=True,transpose=True)
     model.add(
         Conv2DTranspose(input_shape[-1], (1,kernels[0]), strides=(1,strides[0]), output_padding=(0,0), padding=padding)
     )
-    model.add(Reshape(input_shape))
     model.summary()
     return model
 

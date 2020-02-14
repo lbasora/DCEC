@@ -110,7 +110,7 @@ class DCEC:
         save_dir="dcec",
         csvlog = None,
     ):
-        self.Xtest = None
+        self.testfeatures = None
         self.csvlog = csvlog 
         self.input_shape = input_shape
         self.n_clusters = n_clusters

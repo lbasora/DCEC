@@ -17,8 +17,8 @@ import generateparamlist
 
 import tensorflow as tf
 from keras import backend as K
-tf.config.threading.set_intra_op_parallelism_threads(1)
-tf.config.threading.set_inter_op_parallelism_threads(1)
+tf.config.threading.set_intra_op_parallelism_threads(2)
+tf.config.threading.set_inter_op_parallelism_threads(2)
 
 #conf =K.tf.compat.v1.ConfigProto(device_count={'CPU': 1},
 #                        intra_op_parallelism_threads=2,
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", default=1000, type=int)
     parser.add_argument("--maxiter", default=10000, type=int)
     parser.add_argument("--update_interval", default=140, type=int)
-    parser.add_argument("--save_dir", default="results/")
+    parser.add_argument("--save_dir", default=None)
     parser.add_argument("--model", default="dense")
     parser.add_argument("--lambda_kl", type=float, default=0.)
     parser.add_argument("--filters", type=str, default="8_16_32")
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     if args.model == "dense":
         sel_input_shape, sel_cae = input_shape_dense, lambda input_shape: dense(input_shape,archidense)
     elif args.model == "cae2d":
-        sel_input_shape, sel_cae = input_shape, CAE
+        sel_input_shape, sel_cae = input_shape, lambda input_shape: CAE(input_shape,filters,kernels)
     elif args.model == "cae1d":
         sel_input_shape, sel_cae = input_shape1d, lambda input_shape: CAE1d(input_shape,filters,kernels)
     elif args.model == "local1d":
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         raise Exception("bad model:", args.model)
     print(args)
 
-    if not os.path.exists(args.save_dir):
+    if args.save_dir is not None and not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
 
     tall = Traffic.from_file(args.data_path)#.sample(frac=1).reset_index(drop=True)
@@ -110,6 +110,7 @@ if __name__ == "__main__":
 #    raise Exception
     csvlog = None if args.csvlog is None else (args.csvlog, vars(args))
     input_shape=sel_input_shape(nb_samples, nb_features)
+    print("input_shape",input_shape)
     dcec = DCEC(
         input_shape=input_shape,
 #        filters= [int(x) for x in args.filters.split("_")],

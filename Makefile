@@ -6,7 +6,7 @@ PYTHON=python3
 
 DATA_PATH = ./hypers
 
-JOBS = $(foreach i,$(shell seq 0 10),$(DATA_PATH)/$i.csv)
+JOBS = $(foreach i,$(shell seq 0 300),$(DATA_PATH)/$i.csv)
 
 all: $(JOBS)
 

@@ -9,7 +9,7 @@ def testrandomgen():
     '''generate all the random hyperparameters to test'''
 
     # number of layers
-    nlayers = np.random.randint(1, 4, N)
+    nlayers = np.random.randint(1, 8, N)
     def generatearchirandom(sizelim=100,reverse=True):
         a = []
         possiblehidden = list(range(3, sizelim))
@@ -57,7 +57,7 @@ def testrandomgen():
     # architecture of the network (number of layers and number of hidden units)
     lmodels = ["dense","cae1d"]
     ks,cs=generatekernelfilterrandom()
-    r["--model"] = [lmodels[np.random.randint(len(lmodels))] for i in range(N)]
+    r["--model"] = ["dense"]*N#[lmodels[np.random.randint(len(lmodels))] for i in range(N)]
     r["--kernels"] = ks
     r["--archidense"] = generatearchirandom()
     r["--filters"] = cs
